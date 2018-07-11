@@ -1,30 +1,30 @@
 # Rails session stores
 
-At work, we have a rails application which is using redis (AWS ElastiCache) for a few different things. General caching, sidekiq jobs, and also as our session store.
+At work, we have a rails application which is using redis (AWS ElastiCache in PRODUCTION) for a few different things. General caching, sidekiq jobs, and we also use it for our session store.
 
 Work on this application is ramping down and resources will be moved away from it shortly. We have had instances where AWS ElastiCache wasn't great for the session store (network timeouts, unavailability, and automatic maintenance windows). Because of the lowered resources on the project, instead of architecting a more robust solution backed by redis, we opted to move the session store to ActiveRecord::SessionStore.
 
-There's not a lot to this, but I thought it was be useful to document what I ended up implementing.
+There's not a lot to this, but I thought it would be useful to document what I ended up implementing.
 
 Because we didn't want this to impact users when it goes live, I ended up writing some code to manage translating and migrating any active sessions from redis to ActiveRecord::SessionStore.
 
 ## Redis store
 
-The redis session store was pretty straight forward. Keys went in to redis under a "session" namespace. They were _essentially_ just ruby hashes (not really but for arguments sakes this is accurate enough).
+The redis session store we originally used was pretty straight forward. We used the `redis-rails` gem. Sessions went in to redis under a "session" namespace. They were _essentially_ just ruby hashes (not really but for arguments sakes this is accurate enough).
 
 ## ActiveRecord::SessionStore
 
 ActiveRecord::SessionStore treats session data a bit differently, though, and hashes the data values. Because of the discrepancy between the two session stores, I had to find a way to translate the session data from redis to ActiveRecord::SessionStore.
 
-Thankfully Rails has some very nice features to help as well as ActiveRecord::SessionStore.
+Thankfully Rails and ActiveRecord::SessionStore has a couple of nice features to help with this.
 
 # Piecing things together
 
-First things first, I added the `active_record_session_store` gem to the `Gemfile` and created a new database migration to create the session table.
+First things first, I added the `active_record_session_store` gem to the `Gemfile`, replacing `redis-rails` and created a new database migration to create the session table.
 
 ## The database migration
 
-The first pass at this is exactly what you'd expect. Create the table, add some indexes. We'll come back to this later.
+The first pass at this is exactly what you'd expect. Create the table and add some indexes. We'll come back to this later.
 
 ```ruby
 class AddSessionsTable < ActiveRecord::Migration[5.1]
@@ -48,7 +48,8 @@ This is the more interesting piece.
 ```ruby
 class SessionMigrationService
   def initialize
-    @redis = Redis.new(url: "redis://#{Rails.application.secrets.redis[:host]}:#{Rails.application.secrets.redis[:port]}")
+    url = "redis://#{Rails.application.secrets.redis[:host]}:#{Rails.application.secrets.redis[:port]}"
+    @redis = Redis.new(url: url)
     @cache = ActiveSupport::Cache.lookup_store(:redis_store)
   end
 
@@ -56,7 +57,7 @@ class SessionMigrationService
     redis_session_data.each do |hash|
       ActiveRecord::SessionStore::Session.new(
         session_id: hash.fetch('session_id'),
-        data:       hash.reject { |key| key == 'session_id' }
+        data: hash.reject { |key| key == 'session_id' }
       ).save!
   end
 
@@ -78,7 +79,7 @@ end
 
 There's not much to it. We instantiate a redis client and a cache client. The cache client here will allow us to very easily pull our session data out of redis as a ruby hash.
 
-We pull any keys out of redis, fetch the data that pairs to those keys out of the cache, and return them as an array. We loop over the array and use the hash to create and persist new ActiveRecord::SessionStore::Session objects.
+We pull the session key names out of redis, fetch the data that pairs to those keys out of the cache, and return them as an array of hashes. We loop over the array and use the session data in each hash to create and persist new ActiveRecord::SessionStore::Session objects.
 
 ## The final bit
 
