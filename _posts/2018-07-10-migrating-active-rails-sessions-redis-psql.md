@@ -71,7 +71,7 @@ class SessionMigrationService
   end
 
   def keys
-    @keys ||= @redis.keys('session:*')
+    @redis.keys('session:*')
   end
 end
 ```
