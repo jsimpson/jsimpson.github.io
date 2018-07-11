@@ -78,11 +78,11 @@ end
 
 There's not much to it. We instantiate a redis client and a cache client. The cache client here will allow us to very easily pull our session data out of redis as a ruby hash.
 
-We pull any keys out of redis, fetch the data the pairs to those keys out of the cache, and return them as an array.
+We pull any keys out of redis, fetch the data that pairs to those keys out of the cache, and return them as an array. We loop over the array and use the hash to create and persist new ActiveRecord::SessionStore::Session objects.
 
-## The final migration
+## The final bit
 
-We need to use this session migration service inside of our database migration. We want to create the table, pull session data our of redis, convert it to an ActiveRecord::SessionStore session and then persist it. Thankfully, this is all painless.
+We need to execute the service inside of our database migration.
 
 ```ruby
 class AddSessionsTable < ActiveRecord::Migration[5.1]
