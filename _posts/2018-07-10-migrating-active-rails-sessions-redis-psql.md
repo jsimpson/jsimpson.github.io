@@ -53,14 +53,22 @@ class SessionMigrationService
   end
 
   def execute
+    redis_session_data.each do |hash|
+      ActiveRecord::SessionStore::Session.new(
+        session_id: hash.fetch('session_id'),
+        data:       hash.reject { |key| key == 'session_id' }
+      ).save!
+  end
+
+  private
+
+  def redis_session_data
     keys.map do |key|
       @cache
         .read(key)
         .merge('session_id' => key.gsub(/session:/, ''))
     end
   end
-
-  private
 
   def keys
     @keys ||= @redis.keys('session:*')
@@ -78,7 +86,7 @@ We need to use this session migration service inside of our database migration. 
 
 ```ruby
 class AddSessionsTable < ActiveRecord::Migration[5.1]
-  def up
+  def change
     create_table :sessions do |t|
       t.string :session_id, :null => false
       t.text :data
@@ -88,17 +96,7 @@ class AddSessionsTable < ActiveRecord::Migration[5.1]
     add_index :sessions, :session_id, :unique => true
     add_index :sessions, :updated_at
 
-    redis_session_data = SessionMigrationService.new.execute
-    redis_session_data.each do |hash|
-      ActiveRecord::SessionStore::Session.new(
-        session_id: hash.fetch('session_id'),
-        data:       hash.reject { |key| key == 'session_id' }
-      ).save!
-    end
-  end
-
-  def down
-    raise ActiveRecord::IrreversibleMigration, 'ActiveRecord::SessionStore manages our sessions now!'
+    SessionMigrationService.new.execute
   end
 end
 ```
