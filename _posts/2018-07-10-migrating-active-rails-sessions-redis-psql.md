@@ -16,7 +16,7 @@ The redis session store we originally used was pretty straight forward. We used 
 
 ActiveRecord::SessionStore treats session data a bit differently, though, and hashes the data values. Because of the discrepancy between the two session stores, I had to find a way to translate the session data from redis to ActiveRecord::SessionStore.
 
-Thankfully Rails and ActiveRecord::SessionStore has a couple of nice features to help with this.
+Thankfully Rails and ActiveRecord::SessionStore have a couple of nice features to help with this.
 
 # Piecing things together
 
@@ -63,16 +63,18 @@ class SessionMigrationService
 
   private
 
+  attr_reader :cache, :redis
+
   def redis_session_data
     keys.map do |key|
-      @cache
+      cache
         .read(key)
         .merge('session_id' => key.gsub(/session:/, ''))
     end
   end
 
   def keys
-    @redis.keys('session:*')
+    redis.keys('session:*')
   end
 end
 ```
